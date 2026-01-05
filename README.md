@@ -1,5 +1,3 @@
-Here is the corrected, full markdown write-up. The errors in your previous version were caused by missing closing tags (```) after code blocks and merged headers. This version is cleaned up and ready to be pasted directly into a README.md or DEPLOYMENT_DEEP_DIVE.md file.
-
 🚀 Project "Franken-Splunk": 150-Node SIEM Deployment
 📝 Project Narrative
 The mission was to architect and stand up a production-ready Splunk Enterprise environment for an organization in a single 8-hour shift. To achieve this with zero budget, I utilized scavenged physical drives, a community-tier Splunk Pledge (10GB/day) license, and automated deployment via an enterprise RMM (Remote Monitoring and Management) tool.
