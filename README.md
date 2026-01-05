@@ -25,38 +25,7 @@ sudo lvcreate -L 930G -n splunk_data_lv [VG_NAME]
 # 5. Format and mount the new volume to the Splunk data path
 sudo mkfs.ext4 /dev/[VG_NAME]/splunk_data_lv
 sudo mount /dev/[VG_NAME]/splunk_data_lv /opt/splunk/var/lib/splunk
-Below is the complete, scrubbed technical deep dive formatted as a clean Markdown file. All personal identifiers, organization names, and specific IP addresses have been removed for safe public sharing.
-
-Markdown
-
-# 🚀 Project "Franken-Splunk": 150-Node SIEM Deployment
-
-## 📝 Project Narrative
-The mission was to architect and stand up a production-ready **Splunk Enterprise** environment for an organization in a single 8-hour shift. To achieve this with zero budget, I utilized scavenged physical drives, a community-tier **Splunk Pledge (10GB/day)** license, and automated deployment via an enterprise **RMM (Remote Monitoring and Management)** tool.
-
----
-
-## 🛠️ Phase 1: Storage Engineering (LVM)
-Because the server utilized multiple small physical disks, I implemented **Logical Volume Management (LVM)** to aggregate the hardware into a unified 1TB high-performance storage pool. This decoupled high-velocity data ingestion from the OS partition to ensure system stability.
-
-### Critical Commands Executed:
-```bash
-# 1. Prepare raw disks by wiping existing partition tables
-sudo wipefs -a /dev/sdX /dev/sdY
-
-# 2. Initialize Physical Volumes (PV)
-sudo pvcreate /dev/sdX /dev/sdY
-
-# 3. Aggregate disks into a unified Volume Group (VG)
-sudo vgcreate [VG_NAME] /dev/sdX /dev/sdY
-
-# 4. Provision a ~930GB Logical Volume (LV) for the Splunk DB
-sudo lvcreate -L 930G -n splunk_data_lv [VG_NAME]
-
-# 5. Format and mount the new volume to the Splunk data path
-sudo mkfs.ext4 /dev/[VG_NAME]/splunk_data_lv
-sudo mount /dev/[VG_NAME]/splunk_data_lv /opt/splunk/var/lib/splunk
-🏗️ Phase 2: Architecting the Ingest Pipeline
+## 🏗️ Phase 2: Architecting the Ingest Pipeline
 I configured the Splunk Indexer on Ubuntu LTS to act as the central "receiver" for the 150-node fleet.
 
 Receiving Tier: Enabled TCP Port 9997 as the dedicated ingest listener.
@@ -65,7 +34,7 @@ Storage Mapping: Modified configuration files to map $SPLUNK_DB directly to the 
 
 License Management: Activated the Splunk Pledge 10GB/day license to accommodate high-fidelity security audit logging.
 
-🔄 Phase 3: The "Ghost Server" Distribution (Engineering Pivot)
+## 🔄 Phase 3: The "Ghost Server" Distribution (Engineering Pivot)
 The Challenge: Downloading a 100MB installer over the WAN 150 times would have saturated the office network.
 
 The Solution: I transformed the Splunk Indexer into a Localized Binary Distribution Point using a Python3 HTTP listener inside a persistent terminal session.
