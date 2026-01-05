@@ -1,93 +1,92 @@
 🚀 Project "Franken-Splunk": 150-Node SIEM Deployment
-📝 Project Narrative
-The mission was to architect and stand up a production-ready Splunk Enterprise environment for an organization in a single 8-hour shift. To achieve this with zero budget, I utilized scavenged physical drives, a community-tier Splunk Pledge (10GB/day) license, and automated deployment via an enterprise RMM (Remote Monitoring and Management) tool.
+📝 The Backstory
+I had one 8-hour shift to stand up a production-ready Splunk Enterprise environment from scratch. No budget, no new hardware, and 150 PCs that needed monitoring. By scavenging old drives for an LVM pool, snagging the Splunk Pledge (10GB/day) license, and script-automating the rollout via RMM, I got the whole fleet talking to a central indexer before the end of the day.
 
-🛠️ Phase 1: Storage Engineering (LVM)
-Because the server utilized multiple small physical disks, I implemented Logical Volume Management (LVM) to aggregate the hardware into a unified 1TB high-performance storage pool. This decoupled high-velocity data ingestion from the OS partition to ensure system stability.
+🛠️ Phase 1: Storage Engineering (The LVM Grind)
+I didn't have one big drive, so I had to make one. I used Logical Volume Management (LVM) to strip together a bunch of smaller physical disks into a unified 1TB pool. This kept the high-speed data flow from choking the OS partition.
 
-Critical Commands Executed:
+The CLI Work:
 Bash
 
-# 1. Prepare raw disks by wiping existing partition tables
+# Cleaned the old partition tables off the scavenged drives
 sudo wipefs -a /dev/sdX /dev/sdY
 
-# 2. Initialize Physical Volumes (PV)
+# Turned them into Physical Volumes
 sudo pvcreate /dev/sdX /dev/sdY
 
-# 3. Aggregate disks into a unified Volume Group (VG)
+# Smashed them together into one Volume Group
 sudo vgcreate [VG_NAME] /dev/sdX /dev/sdY
 
-# 4. Provision a ~930GB Logical Volume (LV) for the Splunk DB
+# Carved out a 930GB Logical Volume for the actual Splunk DB
 sudo lvcreate -L 930G -n splunk_data_lv [VG_NAME]
 
-# 5. Format and mount the new volume to the Splunk data path
+# Formatted and mounted it so Splunk could actually use it
 sudo mkfs.ext4 /dev/[VG_NAME]/splunk_data_lv
 sudo mount /dev/[VG_NAME]/splunk_data_lv /opt/splunk/var/lib/splunk
-🏗️ Phase 2: Architecting the Ingest Pipeline
-I configured the Splunk Indexer on Ubuntu LTS to act as the central "receiver" for the 150-node fleet.
+🏗️ Phase 2: Building the Pipe
+I set up the Splunk Indexer on Ubuntu LTS to be the "brain" for all 150 nodes.
 
-Receiving Tier: Enabled TCP Port 9997 as the dedicated ingest listener.
+The Ingest: Fired up TCP Port 9997 to listen for incoming data.
 
-Storage Mapping: Modified configuration files to map $SPLUNK_DB directly to the LVM mount point.
+Storage Mapping: Tweaked the config files to make sure $SPLUNK_DB lived on my new 930GB drive.
 
-License Management: Activated the Splunk Pledge 10GB/day license to accommodate high-fidelity security audit logging.
+The License: Got the 10GB/day license active so we could actually log real security events without hitting a wall.
 
-🔄 Phase 3: The "Ghost Server" Distribution (Engineering Pivot)
-The Challenge: Downloading a 100MB installer over the WAN 150 times would have saturated the office network.
-
-The Solution: I transformed the Splunk Indexer into a Localized Binary Distribution Point using a Python3 HTTP listener inside a persistent terminal session.
+🔄 Phase 3: The "Ghost Server" Pivot
+The Problem: Trying to download a 100MB installer 150 times would have absolutely killed our office internet. The Fix: I turned the Splunk server itself into a local file host using a Python HTTP listener inside a GNU Screen session.
 
 Bash
 
-# Launching the persistent distribution point
+# Start a persistent 'Ghost Session'
 screen -S forwarder_deploy
 cd /path/to/installer/
+# Host the file locally so the PCs pull from the LAN, not the Web
 sudo python3 -m http.server 80
-# Detach session (Ctrl+A, D) to keep active in background
-⚡ Phase 4: Automated RMM Fleet Rollout
-I developed a PowerShell deployment wrapper and executed it via the organization's RMM. This script pulled the installer from the internal distribution point over the local LAN at wire-speed.
+# (Ctrl+A, D to let it run in the background)
+⚡ Phase 4: The RMM "Full Blast" Rollout
+I wrote a PowerShell wrapper and pushed it out through our RMM. The script tells every PC to grab the file from my local "Ghost Server" at lightning speed and install itself silently.
 
-The Deployment Script:
+My Deployment Script:
 PowerShell
 
-# 1. Verify if agent is already present
+# 1. Check if Splunk is already there (don't break what's working)
 if (Get-Service "SplunkForwarder" -ErrorAction SilentlyContinue) {
-    Write-Output "Agent already installed. Exiting."
+    Write-Output "Already installed. Moving on."
     exit 0
 }
 
-# 2. Fetch installer from the internal distribution server
+# 2. Grab the MSI from my local Linux server (LAN speed, not WAN speed)
 $url = "http://[INTERNAL_IP]/splunkforwarder.msi"
 $dest = "C:\Windows\Temp\splunkforwarder.msi"
 Invoke-WebRequest -Uri $url -OutFile $dest
 
-# 3. Silent Installation pointing back to the Indexer on Port 9997
+# 3. Install it silently and point it straight to my Indexer on 9997
 $args = "/i `"$dest`" AGREETOLICENSE=Yes RECEIVING_INDEXER=`"[INTERNAL_IP]:9997`" /quiet"
 Start-Process msiexec.exe -ArgumentList $args -Wait
 
-# 4. Cleanup
+# 4. Clean up the temp file
 Remove-Item $dest
-🔍 Phase 5: Verification & SOC Use Cases
-Once the fleet was live, I validated the ingestion pipeline using Splunk Search Processing Language (SPL) to verify telemetry from various nodes was being parsed correctly.
+🔍 Phase 5: Monitoring the Army
+Once I hit "Run" in the RMM, I jumped into Splunk to watch the hosts start checking in.
 
-Heartbeat Check:
+The "Is it working?" Search:
 Code snippet
 
 | metadata type=hosts index=_internal 
 | eval last_seen=strftime(lastTime, "%Y-%m-%d %H:%M:%S") 
 | table host, last_seen
-Initial SOC Security Search (Brute Force Detection):
+My First SOC Search (Hunting for Brute Force):
 Code snippet
 
 index=main EventCode=4625 
 | stats count by TargetUserName, IpAddress, host 
 | where count > 10 
 | rename count as "Failed Attempts"
-📈 Project Impact
-Total Visibility: Centralized telemetry for 150 endpoints.
+📈 The Win
+100% Visibility: Every PC is now reporting in.
 
-Network Efficiency: Zero WAN impact during rollout via localized distribution.
+No Network Lag: Handled the whole rollout over the LAN without touching the WAN.
 
-Infrastructure Resilience: Scalable LVM storage backend managed via CLI.
+Zero Cost: Built the whole thing with scavenged parts and smart scripting.
 
-Cost Efficiency: $0 total hardware/software spend by leveraging scavenged resources.
+SOC Ready: We went from "blind" to "threat hunting" in one day.
