@@ -1,62 +1,115 @@
-# 🚀 Project "Franken-Splunk": From Scavenged Hardware to 150-Node SIEM
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body { font-family: sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: auto; padding: 20px; }
+    h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+    h2 { color: #2980b9; margin-top: 30px; border-left: 5px solid #3498db; padding-left: 10px; }
+    h3 { color: #16a085; }
+    code { background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-family: monospace; }
+    pre { background-color: #2d2d2d; color: #ccc; padding: 15px; border-radius: 5px; overflow-x: auto; font-family: monospace; }
+    .highlight { color: #f39c12; font-weight: bold; }
+    .impact { background-color: #e8f6f3; padding: 15px; border-radius: 5px; border: 1px solid #16a085; }
+</style>
+</head>
+<body>
 
-## 📝 The Mission
-To build a production-grade Security Information and Event Management (SIEM) environment for a non-profit organization in a single 8-hour shift. This required a "Zero-Budget" approach: utilizing scavenged hardware, a 10GB/day community license, and automated deployment via existing RMM tools.
+    <h1>🚀 Project "Franken-Splunk": 150-Node SIEM Deployment</h1>
 
----
+    <p><b>Project Narrative:</b> The mission was to architect and stand up a production-ready <b>Splunk Enterprise</b> environment for a non-profit organization in a single 8-hour shift. To achieve this with zero budget, I utilized scavenged physical drives, a <b>Splunk Pledge (10GB/day)</b> community license, and automated deployment via <b>NinjaOne RMM</b>.</p>
 
-## 🛠️ Phase 1: Storage Engineering & The "Franken-PC"
-The server was built from disparate physical disks. To ensure Splunk had the speed and capacity required for 150 endpoints, I utilized **Linux LVM (Logical Volume Management)**.
+    <h2>🛠️ Phase 1: Storage Engineering (LVM)</h2>
+    <p>Because the server utilized multiple small physical disks, I implemented <b>Logical Volume Management (LVM)</b> to aggregate the hardware into a unified 1TB high-performance storage pool. This decoupled high-velocity data ingestion from the OS partition to ensure system stability.</p>
+    
+    <h3>Critical Commands Executed:</h3>
+    <pre>
+# 1. Prepare raw disks by wiping existing partition tables
+sudo wipefs -a /dev/sda /dev/sdc
 
-* **The Problem:** Multiple small disks that couldn't hold the index individually.
-* **The Fix:** Aggregated `/dev/sda` and `/dev/sdc` into a unified Volume Group (`ubuntu-vg`).
-* **The Result:** A high-capacity 930GB Logical Volume dedicated to `$SPLUNK_DB`, ensuring OS stability while maximizing data retention.
+# 2. Initialize Physical Volumes (PV)
+sudo pvcreate /dev/sda /dev/sdc
 
----
+# 3. Aggregate disks into a unified Volume Group (VG)
+sudo vgcreate ubuntu-vg /dev/sda /dev/sdc
 
-## 🏗️ Phase 2: Architecting the Ingest Pipeline
-We stood up Splunk Enterprise 10.0.2 on Ubuntu 24.04.3 LTS with a focus on **Persistence and Reliability**.
+# 4. Provision a 930GB Logical Volume (LV) for the Splunk DB
+sudo lvcreate -L 930G -n splunk_data_lv ubuntu-vg
 
-* **Network Handshake:** Configured a dedicated TCP listener on **Port 9997**.
-* **License Management:** Successfully implemented the **Splunk Pledge (10GB/day)**, allowing for full-scale ingestion of Windows audit logs.
-* **Service Hardening:** Modified `splunk-launch.conf` to map data paths directly to the LVM mount point.
+# 5. Format and mount the new volume to the Splunk data path
+sudo mkfs.ext4 /dev/ubuntu-vg/splunk_data_lv
+sudo mount /dev/ubuntu-vg/splunk_data_lv /opt/splunk/var/lib/splunk
+    </pre>
 
----
+    <h2>🏗️ Phase 2: Architecting the Ingest Pipeline</h2>
+    <p>I configured the <b>Splunk Indexer</b> on Ubuntu 24.04.3 LTS to act as the central "receiver" for the 150-node fleet.</p>
+    <ul>
+        <li><b>Receiving Tier:</b> Enabled <b>TCP Port 9997</b> as the dedicated ingest listener.</li>
+        <li><b>Storage Mapping:</b> Modified <code>splunk-launch.conf</code> to map <code>$SPLUNK_DB</code> directly to the LVM mount point.</li>
+        <li><b>License Management:</b> Activated the <b>Splunk Pledge 10GB/day</b> license to accommodate high-fidelity audit logging.</li>
+    </ul>
 
-## 🔄 Phase 3: The "Ghost Server" Distribution (Engineering Pivot)
-**Challenge:** Downloading a 100MB MSI 150 times would have saturated the organization's WAN and triggered rate-limiting.
+    <h2>🔄 Phase 3: The "Ghost Server" Distribution</h2>
+    <p><span class="highlight">The Challenge:</span> Downloading a 100MB MSI over the WAN 150 times would have saturated the office network.</p>
+    <p><span class="highlight">The Solution:</span> I transformed the Splunk Indexer into a <b>Localized Binary Distribution Point</b> using a Python3 HTTP listener inside a persistent <b>GNU Screen</b> session.</p>
+    <pre>
+# Launching the persistent distribution point
+screen -S forwarder_deploy
+cd /home/mlannen/
+sudo python3 -m http.server 80
+# Detach with Ctrl+A, then D
+    </pre>
 
-**Solution:** I transformed the Splunk Indexer into a **Localized Binary Distribution Point**.
-1.  **Staging:** Used `wget` to pull the Universal Forwarder (UF) MSI to the server.
-2.  **Hosting:** Launched a **Python3 HTTP listener** on Port 80.
-3.  **Persistence:** Utilized **GNU Screen** to keep the file server alive in a "Ghost Session," allowing for an asynchronous, batch-based rollout over several days.
+    <h2>⚡ Phase 4: Automated RMM Fleet Rollout</h2>
+    <p>I developed a <b>PowerShell deployment wrapper</b> and executed it via <b>NinjaOne RMM</b>. This script pulled the MSI from the internal "Ghost Server" over the local LAN at wire-speed.</p>
+    
+    <h3>The Deployment Script:</h3>
+    <pre>
+# 1. Verify if Splunk is already present
+if (Get-Service "SplunkForwarder" -ErrorAction SilentlyContinue) {
+    Write-Output "Splunk already installed. Exiting."
+    exit 0
+}
 
----
+# 2. Fetch MSI from the internal 'Ghost Server' (192.168.0.26)
+$url = "http://192.168.0.26/splunkforwarder.msi"
+$dest = "C:\Windows\Temp\splunkforwarder.msi"
+Invoke-WebRequest -Uri $url -OutFile $dest
 
-## ⚡ Phase 4: Automated RMM Fleet Rollout
-To hit the 150-node goal, I developed a **PowerShell wrapper** for deployment via **NinjaOne RMM**.
+# 3. Silent Installation pointing back to the Indexer on Port 9997
+$args = "/i `"$dest`" AGREETOLICENSE=Yes RECEIVING_INDEXER=`"192.168.0.26:9997`" /quiet"
+Start-Process msiexec.exe -ArgumentList $args -Wait
 
-**Deployment Logic:**
-1.  **Idempotency:** The script checks for the `SplunkForwarder` service before execution to prevent system drift.
-2.  **LAN Speed Fetch:** Points the Windows client to the internal "Ghost Server" IP (`192.168.0.26`) for a sub-5-second download.
-3.  **Silent Parameterization:** Uses `msiexec` with `AGREETOLICENSE=Yes` and `RECEIVING_INDEXER` flags to ensure zero-touch installation.
+# 4. Cleanup
+Remove-Item $dest
+    </pre>
 
----
+    <h2>🔍 Phase 5: Verification & SOC Use Cases</h2>
+    <p>Once the fleet was live, I validated the ingestion pipeline using <b>Splunk Search Processing Language (SPL)</b> to verify telemetry from nodes (e.g., <code>201-516</code>).</p>
+    
+    <h3>Heartbeat Check:</h3>
+    <pre>
+| metadata type=hosts index=_internal 
+| eval last_seen=strftime(lastTime, "%Y-%m-%d %H:%M:%S") 
+| table host, last_seen
+    </pre>
 
-## 🔧 Engineering Pivots & Troubleshooting (The "Real World" Stuff)
-During the build, we encountered several "real-world" hurdles that required immediate pivots:
-* **LVM Recovery:** Fixed partition table conflicts using `wipefs` before the Volume Group would initialize.
-* **Permission Hardening:** Resolved `sudo` requirements for the Python HTTP listener to ensure port 80 was accessible to the fleet.
-* **Browser Security:** Bypassed "Insecure" warnings for internal LAN traffic by validating the **Digital Signature** of the MSI payload before execution.
+    <h3>Initial SOC Security Search (Brute Force Detection):</h3>
+    <pre>
+index=main EventCode=4625 
+| stats count by TargetUserName, IpAddress, host 
+| where count > 10 
+| rename count as "Failed Attempts"
+    </pre>
 
----
+    <div class="impact">
+        <h2>📈 Project Impact</h2>
+        <ul>
+            <li><b>Total Visibility:</b> Centralized telemetry for 150 clinical endpoints.</li>
+            <li><b>Network Efficiency:</b> Zero WAN impact during rollout via localized distribution.</li>
+            <li><b>Infrastructure Resilience:</b> Scalable LVM storage backend.</li>
+            <li><b>Cost Efficiency:</b> $0 total spend by leveraging scavenged hardware.</li>
+        </ul>
+    </div>
 
-## 📊 Final Result: SOC Visibility
-At the end of the shift, the environment was successfully handshaking with the fleet.
-
-* **Active Nodes:** 150 (Phased rollout)
-* **Ingest Port:** TCP 9997
-* **Primary Search for Heartbeat:**
-    `index=_internal | stats count by host, source, version`
-
-**This project proves that with Linux grit, PowerShell automation, and strategic resource pooling, enterprise-grade security visibility is possible on any budget.**
+</body>
+</html>
